@@ -1,39 +1,17 @@
 from typing import List, Any
-from enum import Enum
 import numpy as np
+import numpy.typing as npt
 from tabulate import tabulate
-
-
-class ActivationFunctionEnum(Enum):
-    RELU = 'RELU'
-    SIGMOID = 'SIGMOID'
-    SOFTMAX = 'SOFTMAX'
-
-
-class ActivationFunctions:
-    def activate(X, activation_function: ActivationFunctionEnum):
-        if activation_function == ActivationFunctionEnum.RELU:
-            return ActivationFunctions.relU_activate(X)
-        elif activation_function == ActivationFunctionEnum.SOFTMAX:
-            return ActivationFunctions.softmax_activate(X)
-        elif activation_function == ActivationFunctionEnum.SIGMOID:
-            return ActivationFunctions.sigmoid_activate(X)
-
-    def relU_activate(X):
-        return np.maximum(X, 0)
-
-    def sigmoid_activate(X):
-        return 1 / (1 + np.exp(-X))
-
-    def softmax_activate(X):
-        return np.exp(X) / np.exp(X).sum()
+from HelperFunctions import ActivationFunctionEnum, ActivationFunctions, LossFunctions, LossFunctionsDerivatives
 
 
 class NeuralNetworkLayer:
     no_of_units: int
     activation_function: ActivationFunctionEnum
-    weights: List[Any]
-    bias: List[Any]
+    weights: npt.ArrayLike
+    bias: npt.ArrayLike
+    last_output: npt.ArrayLike
+    last_delta: npt.ArrayLike
     dropout_type: str
     dropout_prob: float
 
@@ -44,7 +22,7 @@ class NeuralNetworkLayer:
         self.activation_function = activation_function
         self.weights = weights
         if weights is not None:
-            self.bias = np.random.standard_normal((1, no_of_units))
+            self.bias = np.random.standard_normal((no_of_units, 1))
             self.dropout_type = dropout_type
             self.dropout_prob = dropout_prob
 
@@ -64,29 +42,49 @@ class NeuralNetwork:
                 self.layers[-1].no_of_units, no_of_units)), dropout_type,
             dropout_prob))
 
-    def describe(self):
+    def describe(self, include_input_layer=False):
         tabulated_string = [[i, layer.no_of_units,
                              layer.activation_function.value,
                              layer.weights.shape[0] * layer.weights.shape[1],
-                             layer.bias.shape[1],
+                             layer.bias.shape[0],
                              layer.weights.shape[0] * layer.weights.shape[1] +
-                             layer.bias.shape[1]]
+                             layer.bias.shape[0]]
                             for i, layer in enumerate(self.layers)
                             if layer.weights is not None]
-        tabulated_string.insert(0, [0, self.layers[0].no_of_units,
+        if include_input_layer:
+            tabulated_string.insert(0, [0, self.layers[0].no_of_units,
                                     None, 0, 0, 0])
         print(tabulate(tabulated_string, headers=[
               'Layer no', 'No of units', 'Activation Function',
               'Weight Parameters', 'Bias Parameters', 'Total Parameters']))
-        print('Total Parameters:', np.sum(np.array(tabulated_string)[:, 5]))
+        print('Total Parameters:', np.sum(
+            np.array(tabulated_string)[:, 5].astype(int)))
 
-    def predict(self, x):
-        return self.forward_pass(x)
-
-    def forward_pass(self, x):
-        last_layer_output = x
+    def display_current_weights(self):
         for i, layer in enumerate(self.layers[1:]):
-            last_layer_output = np.dot(last_layer_output, layer.weights)
+            print('Layer', i+1, '\n', layer.weights, '\n', layer.bias)
+            print('\n')
+
+    def predict(self, X):
+        return self.forward_pass(X)
+
+    def train(self, X, y, epochs, learning_rate=0.01):
+        losses = []
+        for i in range(epochs):
+            y_pred = self.forward_pass(X)
+            self.backward_pass(y, learning_rate)
+            print(f'Epoch {i+1}/{epochs}:')
+            loss = LossFunctions.mean_squared_error(y, y_pred)
+            losses.append(loss)
+            print(f'Loss:{loss}')
+            print(y_pred)
+        return losses
+
+    def forward_pass(self, X):
+        self.layers[0].last_output = X
+        last_layer_output = X
+        for i, layer in enumerate(self.layers[1:]):
+            last_layer_output = np.dot(layer.weights.T, last_layer_output)
             last_layer_output = last_layer_output + layer.bias
             last_layer_output = ActivationFunctions.activate(
                 last_layer_output, layer.activation_function)
@@ -94,4 +92,26 @@ class NeuralNetwork:
                 dp = np.random.rand(*last_layer_output.shape)
                 last_layer_output = (
                     dp > layer.dropout_prob) * last_layer_output
+            self.layers[i+1].last_output = last_layer_output
         return last_layer_output
+
+    def backward_pass(self, y_actual, learning_rate):
+        output_final_layer = self.layers[-1].last_output
+        delta_final_layer = (y_actual - output_final_layer) * \
+            (output_final_layer * (1 - output_final_layer))
+        self.layers[-1].last_delta = delta_final_layer
+        new_weight_final_layer = self.layers[-1].weights + np.dot(self.layers[-2].last_output,
+                                                                  delta_final_layer.T) * learning_rate
+        new_weights = [new_weight_final_layer]
+        for i in reversed(range(1, len(self.layers) - 1)):
+            delta_next_layer = self.layers[i+1].last_delta
+            weight_next_layer = self.layers[i+1].weights
+            delta_current_layer = np.dot(weight_next_layer, delta_next_layer) * (
+                self.layers[i].last_output * (1 - self.layers[i].last_output))
+            self.layers[i].last_delta = delta_current_layer
+            new_weight = self.layers[i].weights + np.dot(
+                self.layers[i-1].last_output, delta_current_layer.T) * learning_rate
+            new_weights.insert(0, new_weight)
+
+        for i, layer in enumerate(self.layers[1:]):
+            layer.weights = new_weights[i]

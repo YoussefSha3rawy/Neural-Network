@@ -46,7 +46,8 @@ class ActivationFunctions:
         return (a >= 0) * 1
 
     def softmax_derivative(a):
-        pass
+        I = np.eye(a.shape[0])
+        return np.dot((I - a.T), a)
 
 
 class LossFunctions:
@@ -64,4 +65,4 @@ class LossFunctions:
 
 class LossFunctionsDerivatives:
     def squared_error_derivative(a, y):
-        return y - a
+        return a - y

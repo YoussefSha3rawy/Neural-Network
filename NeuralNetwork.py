@@ -38,7 +38,7 @@ class NeuralNetwork:
                          activation_function: ActivationFunctionEnum,
                          dropout_type: str = None, dropout_prob: float = 0.2):
         self.layers.append(NeuralNetworkLayer(
-            no_of_units, activation_function, np.random.standard_normal((
+            no_of_units, activation_function, np.ones((
                 self.layers[-1].no_of_units, no_of_units)), dropout_type,
             dropout_prob))
 
@@ -97,8 +97,9 @@ class NeuralNetwork:
 
     def backward_pass(self, y_actual, learning_rate):
         output_final_layer = self.layers[-1].last_output
-        delta_final_layer = (y_actual - output_final_layer) * \
-            (output_final_layer * (1 - output_final_layer))
+        delta_final_layer = LossFunctionsDerivatives.squared_error_derivative(output_final_layer, y_actual) * \
+            ActivationFunctions.activation_derivitive(
+                output_final_layer, self.layers[-1].activation_function)
         self.layers[-1].last_delta = delta_final_layer
         new_weight_final_layer = self.layers[-1].weights + np.dot(self.layers[-2].last_output,
                                                                   delta_final_layer.T) * learning_rate
@@ -107,7 +108,7 @@ class NeuralNetwork:
             delta_next_layer = self.layers[i+1].last_delta
             weight_next_layer = self.layers[i+1].weights
             delta_current_layer = np.dot(weight_next_layer, delta_next_layer) * (
-                self.layers[i].last_output * (1 - self.layers[i].last_output))
+                ActivationFunctions.activation_derivitive(self.layers[i].last_output, self.layers[i].activation_function))
             self.layers[i].last_delta = delta_current_layer
             new_weight = self.layers[i].weights + np.dot(
                 self.layers[i-1].last_output, delta_current_layer.T) * learning_rate

@@ -1,12 +1,19 @@
 from enum import Enum
 import numpy as np
 import numpy.typing as npt
+import sys
+
+
+class LossFunctionEnum(Enum):
+    MSE = 'MSE'
+    CCE = 'CCE'
 
 
 class ActivationFunctionEnum(Enum):
     RELU = 'RELU'
     SIGMOID = 'SIGMOID'
     SOFTMAX = 'SOFTMAX'
+    NONE = 'NONE'
 
 
 class ActivationFunctions:
@@ -17,7 +24,7 @@ class ActivationFunctions:
             return ActivationFunctions.softmax_activate(X)
         elif activation_function == ActivationFunctionEnum.SIGMOID:
             return ActivationFunctions.sigmoid_activate(X)
-        else:
+        elif activation_function == ActivationFunctionEnum.NONE:
             return X
 
     def activation_derivitive(a, activation_function: ActivationFunctionEnum):
@@ -27,7 +34,7 @@ class ActivationFunctions:
             return ActivationFunctions.softmax_derivative(a)
         elif activation_function == ActivationFunctionEnum.SIGMOID:
             return ActivationFunctions.sigmoid_derivative(a)
-        else:
+        elif activation_function == ActivationFunctionEnum.NONE:
             return np.ones(a.shape)
 
     def relU_activate(X):
@@ -37,16 +44,17 @@ class ActivationFunctions:
         return 1 / (1 + np.exp(-X))
 
     def softmax_activate(X):
-        return np.exp(X) / np.exp(X).sum()
+        exp_values = np.exp(X - np.max(X, axis=1, keepdims=True))
+        return exp_values / exp_values.sum(axis=1, keepdims=True)
 
     def sigmoid_derivative(a):
         return a * (1-a)
 
     def relU_derivative(a):
-        return (a >= 0) * 1
+        return (a > 0) * 1
 
     def softmax_derivative(a):
-        I = np.eye(a.shape[0])
+        I = np.eye(a.shape[-1])
         return np.dot((I - a.T), a)
 
 
@@ -57,12 +65,16 @@ class LossFunctions:
     def mean_squared_error(y_actual: npt.ArrayLike, y_pred: npt.ArrayLike) -> float:
         return np.mean(np.square(y_pred - y_actual))
 
-    def cross_entropy(y_actual: npt.ArrayLike, y_pred: npt.ArrayLike) -> float:
-        N = y_pred.shape[0]
-        ce = -np.sum(y_actual*np.log(y_pred))/N
+    def cross_entropy(targets, predictions, epsilon=1e-12):
+        predictions = np.clip(predictions, epsilon, 1. - epsilon)
+        ce = -np.mean(targets*np.log(predictions+1e-9))
         return ce
 
 
 class LossFunctionsDerivatives:
-    def squared_error_derivative(a, y):
-        return a - y
+    def squared_error_derivative(y_pred, y_actual):
+        return y_pred - y_actual
+
+    def cross_entropy(y_pred, y_actual, final_layer_name):
+        if final_layer_name == 'SoftmaxActivation':
+            return (y_pred - y_actual) / len(y_pred)
